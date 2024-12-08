@@ -6,14 +6,9 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings, GoogleGenerativ
 from langchain.tools.retriever import create_retriever_tool
 from langchain.agents import create_react_agent, Tool, AgentExecutor
 from langchain import hub
-from langchain_text_splitters import TokenTextSplitter
-from langchain_experimental.graph_transformers import LLMGraphTransformer
-from langchain.prompts import ChatPromptTemplate
-from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain.schema.runnable import RunnableSequence
 from langchain_groq import ChatGroq
-from langchain.agents import load_tools ,initialize_agent
 
 import json
 import re
@@ -47,23 +42,27 @@ class QuestionAnsweringAgent:
             max_tokens=None,
             timeout=None,
             max_retries=2,
-            # other params...
         )
+        self.llm_llama_grok_chat=ChatGroq(
+            model="llama3-groq-70b-8192-tool-use-preview",
+            temperature=0,
+            max_tokens=None,
+            timeout=None,
+            max_retries=2,
+        )
+        
         self.search = TavilySearchResults(max_results=1)
         self.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-        # self.llm_transformer = LLMGraphTransformer(llm=self.llm)
         self.resume_content=self.contextual_resume_content(resume_content)
-        # self.resume_knowledge_base=self.get_knowledge_base()
 
         # Initialize Google Search Tool
         self.google_tool = Tool(
             name="google-search",
             description=(
                 "Leverage Google Search to find recent and reliable external information. "
-                "Use it for queries that require real-time or general knowledge beyond the resume or your knowledge base."
+                "Use it for queries that requI now know the final answer.ire real-time or general knowledge beyond the resume or your knowledge base."
             ),
-            func=self.search.run,
-            return_direct=True,
+            func=self.search.run
         )
 
         # Load the REACT prompt from LangChain hub
@@ -80,7 +79,7 @@ class QuestionAnsweringAgent:
             self.retriever,
             name="resume_question_answering",
             description=(
-                "Use this tool to answer questions about the resume."
+                "Use this tool to answer questions about the resume or personal details."
                 "It retrieves relevant information about the candidate's experience, skills, projects, cgpa, percentage, personal information, achievements, etc."
             ),
         )
@@ -89,7 +88,7 @@ class QuestionAnsweringAgent:
         self.simple_llm_tool = Tool(
             name="simple-llm",
             description=(
-                "Use this tool to get a straightforward answer from the LLM for any query. "
+                "Use this tool to get a straightforward answer from the LLM for any query (expect personal details)."
                 "It is ideal for basic questions or when additional processing is unnecessary."
             ),
             func=self.llm_grok_chat.invoke,
@@ -100,15 +99,16 @@ class QuestionAnsweringAgent:
 
 
         # Create REACT agent
-        self.agent = create_react_agent(self.llm_grok_chat, self.tools, self.prompt)
+        self.agent = create_react_agent(self.llm_llama_grok_chat, self.tools, self.prompt)
         self.agent_executor = AgentExecutor(
             agent=self.agent, 
             tools=self.tools, 
             verbose=True,     
             # max_execution_time=3,
             max_iterations=4,
-            return_intermediate_steps=True
-            )
+            return_intermediate_steps=True,
+            handle_parsing_errors=True
+        )
 
 
     def extract_list_from_response(self, response_text):
@@ -193,13 +193,6 @@ class QuestionAnsweringAgent:
             print(f"Error during processing: {e}")
             return None
 
-            
-    # def get_knowledge_base(self):
-    #     documents = [Document(page_content=self.resume_content)]
-    #     graph_documents = self.llm_transformer.convert_to_graph_documents(documents)
-    #     print(f"Nodes:{graph_documents[0].nodes}")
-    #     print(f"Relationships:{graph_documents[0].relationships}")
-
     def parse_questions(self, response: str):        
         match = re.search(r"```(json)?(.*)", response, re.DOTALL)
 
@@ -220,8 +213,7 @@ class QuestionAnsweringAgent:
 
     def transcripts_question(self, transcript: str):
         BASE_PROMPT = """\
-        Given a raw text input (TRANSCRIPT), identify all the explicit questions included within the input transcript. Your task is to \
-        extract and return only the exact questions present in the transcript as a list.
+        Given a raw text input (TRANSCRIPT), identify all the explicit questions included within the input transcript. Your task is to extract and return only the exact questions present in the transcript as a list.
 
         << FORMATTING >>
         Return a markdown code snippet with a JSON object with key as questions and whose value is list containing questions,formatted to look like:
@@ -256,14 +248,19 @@ class QuestionAnsweringAgent:
         final_prompt = prompt.format(transcript=transcript)
 
         # Print the final prompt
+        print('-'*100)
         print("Final Prompt Passed to LLM:")
         print(final_prompt)
+        print('-'*100)
 
         # Use the recommended API
         chain = RunnableSequence(prompt | self.llm_chat)
         
         try:
             llm_response = chain.invoke({"transcript": transcript})
+            print('-'*100)
+            print(llm_response)
+            print('-'*100)
             questions = self.parse_questions(llm_response.content)
             return questions
         except Exception as e:
@@ -274,7 +271,6 @@ class QuestionAnsweringAgent:
         """
         Use the REACT agent to answer a question based on the transcript and resume content.
         """
-        print('trnascript: ', transcript)
         questions=self.transcripts_question(transcript)
         if(len(questions) >= 1):
             try:

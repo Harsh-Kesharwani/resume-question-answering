@@ -23,7 +23,6 @@ class AudioTranscriber:
         :param model_path: Path to the Whisper model
         """
         load_dotenv()
-        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.whisper_model = WhisperModel(model_path, device="cpu", compute_type="int8")
 
     def transcribe_audio(self, audio_input):
@@ -38,7 +37,7 @@ class AudioTranscriber:
             segments, _ = self.whisper_model.transcribe(audio_input, beam_size=5)
             # Combine segments into a single transcription text
             transcription = " ".join(segment.text for segment in segments)
-            print(f"Transcription: {transcription}")  # Log the transcription
+            print(f"Transcription: {transcription}")  
             return transcription
         except Exception as e:
             print(f"Error during transcription: {str(e)}")
@@ -64,19 +63,16 @@ class ResumeParser:
                     resume_content = ""
                     for page in doc:
                         resume_content += page.get_text("text")
-                    print("Resume Content (PDF):\n", resume_content)  # Log resume content to console
                     return resume_content
                 # If the file is a Word document
                 elif resume_file.name.endswith(".docx"):
                     doc = docx.Document(resume_file.name)
                     resume_content = "\n".join([para.text for para in doc.paragraphs])
-                    print("Resume Content (DOCX):\n", resume_content)  # Log resume content to console
                     return resume_content
                 # If the file is plain text
                 elif resume_file.name.endswith(".txt"):
                     with open(resume_file.name, "r", encoding="utf-8") as f:
                         resume_content = f.read()
-                        print("Resume Content (TXT):\n", resume_content)  # Log resume content to console
                     return resume_content
                 else:
                     print(f"Unsupported file type: {resume_file.name}")
@@ -156,7 +152,7 @@ class ResumeQAApp:
                 #         inputs=self.audio_input, 
                 #         outputs=self.transcription
                 #     )
-                
+
                 with gr.Column():
                     # Audio Input and Real-Time Transcription
                     self.audio_input = gr.Audio(type="filepath", label="Speak (Audio Input)")
